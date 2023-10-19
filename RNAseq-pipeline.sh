@@ -83,11 +83,52 @@ command -v hisat2 >/dev/null 2>&1 || { echo >&2 "Script requires hisat2 but it's
 command -v samtools >/dev/null 2>&1 || { echo >&2 "Script requires samtools but it's not installed. Aborting."; exit 1; }
 command -v parallel >/dev/null 2>&1 || { echo >&2 "Script requires parallel but it's not installed. Aborting."; exit 1; }
 command -v featureCounts >/dev/null 2>&1 || { echo >&2 "Script requires featureCounts but it's not installed. Aborting."; exit 1; }
+command -v md5sum >/dev/null 2>&1 || { echo >&2 "Script requires md5sum but it's not installed. Aborting."; exit 1; }
 
-############### Pre-alignment QC ###############
+############### Verify md5 hashes ###############
 
 # Change to fastq directory
 cd "${fastq_dir}"
+
+# Define log file path
+md5_log_file="md5_verification.log"
+
+# Flag to track if any mismatches are detected
+mismatch_detected=0
+
+# Check if md5.txt exists
+if [[ -f md5.txt ]]; then
+    # Process each fastq file
+    for fastq in *.fastq.gz; do
+        # Compute MD5 hash for the current fastq file
+        computed_md5=$(md5sum "$fastq" | awk '{print $1}')
+
+        # Extract expected MD5 hash from md5.txt
+        expected_md5=$(grep "$fastq" md5.txt | awk '{print $1}')
+
+        # Compare the two MD5 hashes and write results to log file
+        if [[ "$computed_md5" == "$expected_md5" ]]; then
+            printf "$fastq: MD5 match. Expected: $expected_md5, Computed: $computed_md5\n"
+            echo "$fastq: MD5 match. Expected: $expected_md5 Computed: $computed_md5" >> "$md5_log_file"
+        else
+            printf "$fastq: MD5 mismatch! Expected: $expected_md5, Computed: $computed_md5\n"
+            echo "$fastq: MD5 mismatch! Expected: $expected_md5, Computed: $computed_md5" >> "$md5_log_file"
+            mismatch_detected=1
+        fi
+    done
+
+    # If any mismatches were detected, exit the script
+    if [[ $mismatch_detected -eq 1 ]]; then
+        echo "File integrity verification failed, MD5 mismatches detected. View md5_verification.log for details. \nExiting script." >> "$log_file"
+        exit 1
+    fi
+
+else
+    echo "md5.txt not found! Expected in fastq directory." >> "$md5_log_file"
+    exit 1
+fi
+
+############### Pre-alignment QC ###############
 
 # Run fastqc on all FASTQ files in the directory
 fastqc -t ${threads} *.fastq.gz
