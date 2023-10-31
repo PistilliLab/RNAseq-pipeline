@@ -16,4 +16,5 @@ bash RNAseq-pipeline.sh -f /path/to/fastqs -t 32
 ~~~
 
 ```-f``` - designates the file path for the fastq files to be processed. This is also used as the main working directory and all output files will exist here.
+
 ```-t``` - number of threads to use. Must be integer value. If no input specified, then by default 80% of threads on the system will be used.
