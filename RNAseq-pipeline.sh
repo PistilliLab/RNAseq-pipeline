@@ -12,11 +12,13 @@ current_dir=$(pwd)
 ############### Arguments ###############
 # USAGE:
 # -f /path/to/fastq/files
+# -t <int>
 
-while getopts f: flag
+while getopts f:m:t: flag
 do
     case "${flag}" in
         f) fastq=${OPTARG};;
+        t) threads=${OPTARG};;
     esac
 done
 
@@ -28,12 +30,18 @@ done
 # This script should take care of everything else after that
 fastq_dir="$fastq"
 
-# Number of threads to user
-threads="62"
+# Number of threads to use
+# If threads is not set or is empty, set it to 80% of system's threads
+if [ -z "$threads" ]; then
+    total_threads=$(nproc)
+    threads=$((total_threads * 80 / 100))  # bash only performs integer arithmetic
+fi
+
+threads="$threads"
 
 # Annotation files
-GRCm39_annot="/home/pistillilab/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.109.gtf"
-T2T_annot="/home/pistillilab/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.gtf"
+GRCm39_annot="/home/${username}/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.109.gtf"
+T2T_annot="/home/${username}/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.gtf"
 
 ##### Settings for HISAT2 #####
 # Name of sequencing platform
@@ -55,7 +63,8 @@ hisat2_log="${fastq_dir}/alignments_${current_date}.log"
 rna_strandness="RF"
 
 ##### SAM to BAM #####
-jobs_to_run=28
+# Divides the number of threads to use by 2
+jobs_to_run=$((threads/2))
 
 # Path to featureCounts log file
 featureCounts_log="${fastq_dir}/featureCounts_${current_date}.log"
@@ -91,7 +100,7 @@ command -v md5sum >/dev/null 2>&1 || { echo >&2 "Script requires md5sum but it's
 cd "${fastq_dir}"
 
 # Define log file path
-md5_log_file="md5_verification.log"
+md5_log_file="md5_verification_${current_date}.log"
 
 # Flag to track if any mismatches are detected
 mismatch_detected=0
@@ -119,14 +128,33 @@ if [[ -f md5.txt ]]; then
 
     # If any mismatches were detected, exit the script
     if [[ $mismatch_detected -eq 1 ]]; then
-        echo "File integrity verification failed, MD5 mismatches detected. View md5_verification.log for details. \nExiting script." >> "$log_file"
+        echo "File integrity verification failed, MD5 mismatches detected. View log for details. \nExiting script." >> "$log_file"
         exit 1
     fi
 
 else
-    echo "md5.txt not found! Expected in fastq directory." >> "$md5_log_file"
-    exit 1
+    echo "md5.txt not found! Expected in fastq directory. Can not verify file integrity." >> "$md5_log_file"
+
+    # Prompt user whether to continue
+    echo "Do you want to continue without verifying fastq file integrity? (yes/no)"
+    read user_input
+
+    # Check the user's response
+    case "$user_input" in
+        [Yy]|[Yy][Ee][Ss])
+            echo "Continuing without verification..."
+            ;;
+        [Nn]|[Nn][Oo])
+            echo "Exiting script."
+            exit 1
+            ;;
+        *)
+            echo "Invalid input. Exiting script."
+            exit 1
+            ;;
+    esac
 fi
+
 
 ############### Pre-alignment QC ###############
 
