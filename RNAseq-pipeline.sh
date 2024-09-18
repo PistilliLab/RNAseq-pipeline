@@ -13,14 +13,47 @@ current_dir=$(pwd)
 # USAGE:
 # -f /path/to/fastq/files
 # -t <int>
+# -i "INDEX"
+# -3 <int>
+# -5 <int>
+# -q
 
-while getopts f:m:t: flag
+while getopts f:t:i:3:5:q flag
 do
     case "${flag}" in
         f) fastq=${OPTARG};;
         t) threads=${OPTARG};;
+        i) index=${OPTARG};;
+        3) three_prime=${OPTARG};;
+        5) five_prime=${OPTARG};;
+        q) qc_mode=${OPTARG};;
     esac
 done
+
+# Set default values to 0 if three_prime and five_prime were not provided
+three_prime=${three_prime:-0}
+five_prime=${five_prime:-0}
+
+# Assuming 'index' will be either 'GRCm39' or 'T2T', you can use it to select the corresponding index later in the script.
+
+# Set the path to the selected index based on the provided value
+case "$index" in
+    GRCm39)
+        selected_index="/home/${username}/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.dna.primary_assembly"
+        selected_annot="/home/${username}/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.109.gtf"
+        ;;
+    T2T)
+        selected_index="/home/${username}/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic"
+        selected_annot="/home/${username}/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.gtf"
+        ;;
+    *)
+        echo "Invalid index option provided. Please specify either 'GRCm39' or 'T2T' with the -i flag."
+        exit 1
+        ;;
+esac
+
+# Use 'selected_index' and 'selected_annot' variables instead of the hardcoded paths later in the script.
+
 
 #####################################################################
 ######################## USER DEFINED VALUES ########################
@@ -29,6 +62,27 @@ done
 # Make sure to enter the path to the location of the fastq files you want to process
 # This script should take care of everything else after that
 fastq_dir="$fastq"
+
+# Echo the original command and arguments with a timestamp
+LOGFILE="${fastq}/${current_date}.log"
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Command: $0 $@" | tee -a "$LOGFILE"
+
+# Function to log each line with a timestamp
+log_with_timestamp() {
+    while IFS= read -r line; do
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - $line"
+    done
+}
+
+# Function to log script exit
+log_exit() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Script exited with status $?" | tee -a "$LOGFILE"
+}
+
+# Trap exit and call log_exit function
+trap log_exit EXIT
+
+{
 
 # Number of threads to use
 # If threads is not set or is empty, set it to 80% of system's threads
@@ -39,17 +93,9 @@ fi
 
 threads="$threads"
 
-# Annotation files
-GRCm39_annot="/home/${username}/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.109.gtf"
-T2T_annot="/home/${username}/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic.gtf"
-
 ##### Settings for HISAT2 #####
 # Name of sequencing platform
 platform="ILLUMINA"
-
-# Path to HISAT2 index for reference genome minus the trailing .X.ht2
-GRCm39_index="/home/${username}/Bioinformatics/Indexes/GRCm39/Mus_musculus.GRCm39.dna.primary_assembly"
-T2T_index="/home/${username}/Bioinformatics/Indexes/T2T-CHM13v2.0/GCF_009914755.1_T2T-CHM13v2.0_genomic"
 
 # Path to hisat2 log file
 alignments_dir="${fastq_dir}/alignments"
@@ -76,12 +122,12 @@ featureCounts_log="${fastq_dir}/featureCounts_${current_date}.log"
 ############### Pre-run environment changes ###############
 
 # Reload .bashrc file. TODO: not sure why this is necessary, need to fix.
-source ~/.bashrc
+#source ~/.bashrc
 
 # Activate conda env.0/GCF
 # Doing it this way instead of "conda activate bioinformatics" prevents conda init err
 # This step may not be necessary
-source /home/${username}/anaconda3/bin/activate base
+source activate Bioinformatics
 
 ############### Pre-run checks ###############
 
@@ -139,7 +185,7 @@ else
     echo "Do you want to continue without verifying fastq file integrity? (yes/no)"
     read user_input
 
-    # Check the user's response
+    # Check the user's responseBy ensuring the variable is compared correctly and not accid
     case "$user_input" in
         [Yy]|[Yy][Ee][Ss])
             echo "Continuing without verification..."
@@ -161,14 +207,17 @@ fi
 # Run fastqc on all FASTQ files in the directory
 fastqc -t ${threads} *.fastq.gz
 
-# Run multiqc in same directory as the fastqc reportsT2T_ind
+# Run multiqc in same directory as the fastqc reports
 multiqc .
-
-# Rename the multiqc report
-rename multiqc_report pre-alignment_multiqc_report_${current_date} ${fastq_dir}/multiqc_report.html
 
 # Make new directory for the fastqc outputs and move
 mkdir fastqc -p && mv *_fastqc* fastqc
+
+# If -q flag is passed, stop the script
+if [ "$qc_mode" = true ]; then
+    echo "QC complete. Exiting script."
+    exit 1
+fi
 
 ############### HISAT2 alignment ###############
 
@@ -176,12 +225,12 @@ mkdir fastqc -p && mv *_fastqc* fastqc
 mkdir -p alignments && cd alignments
 
 # Loop through all the paired read files in the directoryT2T_ind
-for read1_file in ${fastq_dir}/*_R1.fastq.gz; do
+for read1_file in ${fastq_dir}/*_R1_001.fastq.gz; do
   # Extract the file name without the path and file extension
-  file_name=$(basename ${read1_file} _R1.fastq.gz)
+  file_name=$(basename ${read1_file} _R1_001.fastq.gz)
 
   # Determine the corresponding read2 file
-  read2_file=${fastq_dir}/${file_name}_R2.fastq.gz
+  read2_file=${fastq_dir}/${file_name}_R2_001.fastq.gz
 
   # Define the output file name
   output_file=${fastq_dir}/alignments/${file_name}
@@ -190,7 +239,7 @@ for read1_file in ${fastq_dir}/*_R1.fastq.gz; do
   echo "$file_name alignment results:" >> "${hisat2_log}"
 
   # Run HISAT2 on the read1 and read2 files and output to the output file
-  cmd="hisat2 -p ${threads} -x ${GRCm39_index} --rna-strandness ${rna_strandness} --dta -1 ${read1_file} -2 ${read2_file} -S ${output_file}.sam >> ${hisat2_log} 2>&1"
+  cmd="hisat2 -p ${threads} -5 ${five_prime} -3 ${three_prime} -x ${selected_index} --rna-strandness ${rna_strandness} --dta -1 ${read1_file} -2 ${read2_file} -S ${output_file}.sam >> ${hisat2_log} 2>&1"
 
   # Run command
   printf "Running command: ${cmd}\n"
@@ -223,4 +272,8 @@ find "${alignments_dir}" -name "*.sam" | parallel -j ${jobs_to_run} sam_to_bam
 # https://rnnh.github.io/bioinfo-notebook/docs/featureCounts.html
 # -p = specifies that fragments will be counted instead of reads. For paired-end reads only.
 # -O = assigns reads to all their overlapping meta-features
-featureCounts -T ${threads} -p -O -a ${GRCm39_annot} -o "featureCounts_${current_date}.tsv" *.bam >> ${featureCounts_log} 2>&1
+featureCounts -T ${threads} -p -O -a ${selected_annot} -o "featureCounts_${current_date}.tsv" *.bam >> ${featureCounts_log} 2>&1
+
+# Finish Logging
+} 2>&1 | log_with_timestamp | tee -a "$LOGFILE"
+
