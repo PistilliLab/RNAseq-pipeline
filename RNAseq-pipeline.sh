@@ -18,7 +18,10 @@ current_dir=$(pwd)
 # -5 <int>
 # -q
 
-while getopts f:t:i:3:5:q flag
+# Set the dafault value for QC mode
+qc_mode=false
+
+while getopts f:t:i:3:5q flag
 do
     case "${flag}" in
         f) fastq=${OPTARG};;
@@ -26,7 +29,7 @@ do
         i) index=${OPTARG};;
         3) three_prime=${OPTARG};;
         5) five_prime=${OPTARG};;
-        q) qc_mode=${OPTARG};;
+        q) qc_mode=true;;
     esac
 done
 
