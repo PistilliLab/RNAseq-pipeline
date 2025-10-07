@@ -64,3 +64,20 @@ bash RNAseq-pipeline_version.sh -f /path/to/fastqs -t 32 -5 30 -3 70 -i GRCm39
 ```-q [optional]``` Run script in QC only mode. This runs fastqc and multiqc and then exits. Useful for deciding -5 and -3 flag trim settings.
 
 ```-h``` Prints usage information.
+
+# Bulding reference genome index with hisat2
+If there is no available index available or you just want to build it yourself, the following commands will let you build an index using hisat2. **Note: your machine must have at least 160 GB of memory available.**
+
+Run each command in sequence.
+~~~
+hisat2_extract_splice_sites.py nameofgtffile.gtf > genome.ss
+~~~
+
+~~~
+hisat2_extract_exons.py nameofgtffile.gtf > genome.exon
+~~~
+
+~~~
+hisat2-build -p <num of threads> --exon genome.exon --ss genome.ss Reference_genome_primary_assembly.fa Output_name_of_index
+~~~
+
