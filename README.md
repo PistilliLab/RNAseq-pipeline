@@ -61,4 +61,6 @@ bash RNAseq-pipeline_version.sh -f /path/to/fastqs -t 32 -5 30 -3 70 -i GRCm39
 
 ```-i <str>``` Specific reference genome index to use. Path to index files and .gtf must be defined in the script currently.
 
+```-q``` Run script in QC only mode. This runs fastqc and multiqc and then exits. Useful for deciding -5 and -3 flag trim settings.
+
 ```-h``` Prints usage information.
