@@ -1,12 +1,15 @@
 #! /bin/bash
 
+# Current script version
+version=1.5.0
+
 # Get current date and time
 current_date=$(date +%Y-%m-%d_%H-%M-%S)
 
 # Get current user
 username=$(whoami)
 
-# Get aboslute path of current directory
+# Get absolute path of current directory
 current_dir=$(pwd)
 
 ############### Arguments ###############
@@ -17,11 +20,42 @@ current_dir=$(pwd)
 # -3 <int>
 # -5 <int>
 # -q
+# -h
 
-# Set the dafault value for QC mode
+# Set the default value for QC mode
 qc_mode=false
 
-while getopts f:t:i:3:5q flag
+# Text for help option
+print_help() {
+    cat << EOF
+Usage: $(basename "$0") [options]
+
+Options:
+  -f  <path>   Path to directory containing FASTQ files (required)
+  -t  <int>    Number of threads to use (default: 80% of available cores)
+  -i  <string> Reference genome index to use [GRCm39 | T2T] (required)
+  -3  <int>    Trim this many bases from the 3' end of reads (default: 0)
+  -5  <int>    Trim this many bases from the 5' end of reads (default: 0)
+  -q           Run QC mode only (perform FastQC + MultiQC, then exit)
+  -h           Show this help message and exit
+
+Example:
+  $(basename "$0") -f /data/fastq -t 12 -i GRCm39 -3 5 -5 5
+
+Description:
+  This script performs a complete RNA-seq processing pipeline:
+    • Verifies FASTQ file integrity via MD5 checks
+    • Runs FastQC and MultiQC
+    • Aligns reads with HISAT2
+    • Converts alignments directly to BAM (no SAM files)
+    • Counts features using featureCounts
+
+EOF
+}
+
+
+# Arg parsing
+while getopts f:t:i:3:5qh flag
 do
     case "${flag}" in
         f) fastq=${OPTARG};;
@@ -30,8 +64,18 @@ do
         3) three_prime=${OPTARG};;
         5) five_prime=${OPTARG};;
         q) qc_mode=true;;
+        h) print_help; exit 0;;
     esac
 done
+
+
+# Verify required flags
+if [[ -z "$fastq" || -z "$index" ]]; then
+    echo "Error: Missing required arguments."
+    print_help
+    exit 1
+fi
+
 
 # Set default values to 0 if three_prime and five_prime were not provided
 three_prime=${three_prime:-0}
@@ -39,6 +83,7 @@ five_prime=${five_prime:-0}
 
 # Assuming 'index' will be either 'GRCm39' or 'T2T', you can use it to select the corresponding index later in the script.
 
+TODO: Add function below this to check if the index files exist, otherwise return not found error.
 # Set the path to the selected index based on the provided value
 case "$index" in
     GRCm39)
@@ -94,6 +139,7 @@ if [ -z "$threads" ]; then
     threads=$((total_threads * 80 / 100))  # bash only performs integer arithmetic
 fi
 
+# User defined max thread count
 threads="$threads"
 
 ##### Settings for HISAT2 #####
@@ -111,26 +157,12 @@ hisat2_log="${fastq_dir}/alignments_${current_date}.log"
 # No inclusion of the flag for unstranded
 rna_strandness="RF"
 
-##### SAM to BAM #####
-# Divides the number of threads to use by 2
-jobs_to_run=$((threads/2))
-
 # Path to featureCounts log file
 featureCounts_log="${fastq_dir}/featureCounts_${current_date}.log"
 
 #####################################################################
 #####################################################################
 #####################################################################
-
-############### Pre-run environment changes ###############
-
-# Reload .bashrc file. TODO: not sure why this is necessary, need to fix.
-#source ~/.bashrc
-
-# Activate conda env.0/GCF
-# Doing it this way instead of "conda activate bioinformatics" prevents conda init err
-# This step may not be necessary
-source activate Bioinformatics
 
 ############### Pre-run checks ###############
 
@@ -139,9 +171,10 @@ command -v fastqc >/dev/null 2>&1 || { echo >&2 "Script requires fastqc but it's
 command -v multiqc >/dev/null 2>&1 || { echo >&2 "Script requires multiqc but it's not installed. Aborting."; exit 1; }
 command -v hisat2 >/dev/null 2>&1 || { echo >&2 "Script requires hisat2 but it's not installed. Aborting."; exit 1; }
 command -v samtools >/dev/null 2>&1 || { echo >&2 "Script requires samtools but it's not installed. Aborting."; exit 1; }
-command -v parallel >/dev/null 2>&1 || { echo >&2 "Script requires parallel but it's not installed. Aborting."; exit 1; }
 command -v featureCounts >/dev/null 2>&1 || { echo >&2 "Script requires featureCounts but it's not installed. Aborting."; exit 1; }
 command -v md5sum >/dev/null 2>&1 || { echo >&2 "Script requires md5sum but it's not installed. Aborting."; exit 1; }
+
+TODO: check if available free space is adequate for finishing run, but just warn.
 
 ############### Verify md5 hashes ###############
 
@@ -222,59 +255,41 @@ if [ "$qc_mode" = true ]; then
     exit 1
 fi
 
-############### HISAT2 alignment ###############
+############### HISAT2 alignment (streamed to BAM) ###############
 
-# Make alignments folder and cd
-mkdir -p alignments && cd alignments
+mkdir -p "${alignments_dir}" && cd "${alignments_dir}"
 
-# Loop through all the paired read files in the directoryT2T_ind
 for read1_file in ${fastq_dir}/*_R1_001.fastq.gz; do
-  # Extract the file name without the path and file extension
-  file_name=$(basename ${read1_file} _R1_001.fastq.gz)
+  file_name=$(basename "${read1_file}" _R1_001.fastq.gz)
+  read2_file="${fastq_dir}/${file_name}_R2_001.fastq.gz"
+  output_bam="${alignments_dir}/${file_name}.bam"
 
-  # Determine the corresponding read2 file
-  read2_file=${fastq_dir}/${file_name}_R2_001.fastq.gz
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting alignment for ${file_name}" | tee -a "${hisat2_log}"
 
-  # Define the output file name
-  output_file=${fastq_dir}/alignments/${file_name}
+  cmd="hisat2 -p ${threads} -5 ${five_prime} -3 ${three_prime} \
+       -x ${selected_index} \
+       --rna-strandness ${rna_strandness} --dta \
+       -1 ${read1_file} -2 ${read2_file} 2>>${hisat2_log} | \
+       samtools sort -@ ${threads} -o ${output_bam}"
 
-  # Print filename to log file
-  echo "$file_name alignment results:" >> "${hisat2_log}"
-
-  # Run HISAT2 on the read1 and read2 files and output to the output file
-  cmd="hisat2 -p ${threads} -5 ${five_prime} -3 ${three_prime} -x ${selected_index} --rna-strandness ${rna_strandness} --dta -1 ${read1_file} -2 ${read2_file} -S ${output_file}.sam >> ${hisat2_log} 2>&1"
-
-  # Run command
   printf "Running command: ${cmd}\n"
   eval $cmd
+
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished alignment for ${file_name}" | tee -a "${hisat2_log}"
 done
-
-############### SAM to BAM conversion ###############
-
-# Function to run samtools
-sam_to_bam() {
-    sam_file=$1
-
-    # Extract the file name without the path and file extension
-    file_name=$(basename "${sam_file}" .sam)
-
-
-    # Run samtools sort on sam files
-    samtools sort -@ 2 -o "${file_name}".bam "${file_name}".sam
-
-}
-
-# Export the function so GNU parallel can use it
-export -f sam_to_bam
-
-# Use GNU parallel to run the function on each .sam file in parallel
-find "${alignments_dir}" -name "*.sam" | parallel -j ${jobs_to_run} sam_to_bam
 
 ############### featureCounts ###############
 
 # https://rnnh.github.io/bioinfo-notebook/docs/featureCounts.html
 # -p = specifies that fragments will be counted instead of reads. For paired-end reads only.
 # -O = assigns reads to all their overlapping meta-features
+
+# Limit featureCounts to a maximum of 64 threads
+if (( threads > 64 )); then
+    echo "featureCounts supports a maximum of 64 threads. Reducing from ${threads} to 64." | tee -a "$featureCounts_log"
+    threads=64
+fi
+
 featureCounts -T ${threads} -p -O -a ${selected_annot} -o "featureCounts_${current_date}.tsv" *.bam >> ${featureCounts_log} 2>&1
 
 # Finish Logging
