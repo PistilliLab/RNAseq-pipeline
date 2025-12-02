@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # Current script version
-version=1.5.0
+version=1.5.1
 
 # Get current date and time
 current_date=$(date +%Y-%m-%d_%H-%M-%S)
@@ -100,15 +100,13 @@ case "$index" in
         ;;
 esac
 
-# Use 'selected_index' and 'selected_annot' variables instead of the hardcoded paths later in the script.
-
 
 #####################################################################
 ######################## USER DEFINED VALUES ########################
 #####################################################################
 
-# Make sure to enter the path to the location of the fastq files you want to process
-# This script should take care of everything else after that
+# Do not manually set the values here, they are defined by flags.
+
 fastq_dir="$fastq"
 
 # Echo the original command and arguments with a timestamp
@@ -143,19 +141,10 @@ fi
 threads="$threads"
 
 ##### Settings for HISAT2 #####
-# Name of sequencing platform
-platform="ILLUMINA"
 
 # Path to hisat2 log file
 alignments_dir="${fastq_dir}/alignments"
 hisat2_log="${fastq_dir}/alignments_${current_date}.log"
-
-# Strand setting for HISAT2
-# There are three options for this setting
-# R or RF for RF/fr-firststrand stranded (dUTP)
-# F or FR for FR/fr-secondstrand stranded (Ligation)
-# No inclusion of the flag for unstranded
-rna_strandness="RF"
 
 # Path to featureCounts log file
 featureCounts_log="${fastq_dir}/featureCounts_${current_date}.log"
@@ -164,15 +153,61 @@ featureCounts_log="${fastq_dir}/featureCounts_${current_date}.log"
 #####################################################################
 #####################################################################
 
+#####################################################################
+##################### Additional configuration ######################
+#####################################################################
+
+# These settings can be manually modified if necessary, but typically do not need to be.
+
+##### Settings for HISAT2 #####
+# Name of sequencing platform
+platform="ILLUMINA"
+
+# Strand setting for HISAT2
+# There are three options for this setting
+# R or RF for RF/fr-firststrand stranded (dUTP)
+# F or FR for FR/fr-secondstrand stranded (Ligation)
+# No inclusion of the flag for unstranded
+rna_strandness="RF"
+
+#####################################################################
+#####################################################################
+#####################################################################
+
 ############### Pre-run checks ###############
 
+prereq_software=("fastqc", "multiqc", "hisat2", "samtools", "featureCounts", "md5sum")
+
 # Confirm necessary programs are installed and available
-command -v fastqc >/dev/null 2>&1 || { echo >&2 "Script requires fastqc but it's not installed. Aborting."; exit 1; }
-command -v multiqc >/dev/null 2>&1 || { echo >&2 "Script requires multiqc but it's not installed. Aborting."; exit 1; }
-command -v hisat2 >/dev/null 2>&1 || { echo >&2 "Script requires hisat2 but it's not installed. Aborting."; exit 1; }
-command -v samtools >/dev/null 2>&1 || { echo >&2 "Script requires samtools but it's not installed. Aborting."; exit 1; }
-command -v featureCounts >/dev/null 2>&1 || { echo >&2 "Script requires featureCounts but it's not installed. Aborting."; exit 1; }
-command -v md5sum >/dev/null 2>&1 || { echo >&2 "Script requires md5sum but it's not installed. Aborting."; exit 1; }
+missing_soft=0
+
+for software in "${prereq_software[@]}"; do
+    command -v $software >/dev/null 2>&1 || { echo >&2 "Script requires $software but it's not installed."; missing_soft=$((missing_soft+1))}
+done
+
+# If necessary programs absent, attempt to install.
+if [[ $missing_soft > 0 ]]; then
+    echo "Missing software detected. Attempt to install necessary software to continue? (y/n)" >> "$log_file"
+    read user_input
+
+    # Check for valid user response
+    case "$user_input" in
+        [Yy]|[Yy][Ee][Ss])
+            echo "Attempting to install missing software..."
+            ;;
+        [Nn]|[Nn][Oo])
+            echo "Exiting script."
+            exit 1
+            ;;
+        *)
+            echo "Invalid input. Exiting script."
+            exit 1
+            ;;
+    esac
+
+    cmd="sudo apt install fastqc && multiqc && hisat2 && samtools && subread && md5sum"
+    eval $cmd >> "$log_file"
+fi
 
 TODO: check if available free space is adequate for finishing run, but just warn.
 
@@ -221,7 +256,7 @@ else
     echo "Do you want to continue without verifying fastq file integrity? (yes/no)"
     read user_input
 
-    # Check the user's responseBy ensuring the variable is compared correctly and not accid
+    # Check for valid user response
     case "$user_input" in
         [Yy]|[Yy][Ee][Ss])
             echo "Continuing without verification..."
