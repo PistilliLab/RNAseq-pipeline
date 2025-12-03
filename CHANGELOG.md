@@ -1,9 +1,8 @@
 2025-12-02 v1.5.1
-- Some code cleanup, improved comments
-    - Restructured user defined values, split into a section that can be changed called additional configurations
-- Following failed verification of necessary software prerequisites, script offers to try installing software.
-
-
+- Some code cleanup
+- Restructured user defined values, split into a section that can be changed called additional configurations
+- Following failed verification of necessary software prerequisites, script offers to try installing software
+- Improved documentation
 
 2025-10-06 v1.5.0
 

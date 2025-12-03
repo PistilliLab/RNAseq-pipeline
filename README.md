@@ -13,6 +13,13 @@ It is written for use on Linux, and is tested on Ubuntu so it should work on deb
 # Necessary software
 The script assumes you are using a debian based linux distro, but it can be adapted for use on other versions (Fedora, Arch). The following programs must be installed otherwise the script will fail to run and exit with an error.
 
+### One-line install
+For security, it is safer to manually install the software via the below command(s). For convenience, the script can attempt to install the necessary software if allowed.
+~~~
+sudo apt install fastqc multiqc hisat2 samtools subread md5sum
+~~~
+
+### Individual commands
 **fastqc**
 ~~~
 sudo apt install fastqc
@@ -64,6 +71,9 @@ bash RNAseq-pipeline_version.sh -f /path/to/fastqs -t 32 -5 30 -3 70 -i GRCm39
 ```-q [optional]``` Run script in QC only mode. This runs fastqc and multiqc and then exits. Useful for deciding -5 and -3 flag trim settings.
 
 ```-h``` Prints usage information.
+
+### md5 verification
+The script expects a file named "md5.txt" in the same directory as the fastq files to be processed. If there is no file found, the script will offer to continue without verifiying. Verification of fastq file hashes is highly encouraged.
 
 ### Additional configuration section
 This section includes additional settings that can be manually modified if necessary. Typically, they will not need to be altered.

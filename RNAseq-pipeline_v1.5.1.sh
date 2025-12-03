@@ -176,24 +176,28 @@ rna_strandness="RF"
 
 ############### Pre-run checks ###############
 
-prereq_software=("fastqc", "multiqc", "hisat2", "samtools", "featureCounts", "md5sum")
+prereq_software=("fastqc" "multiqc" "hisat2" "samtools" "featureCounts" "md5sum")
 
 # Confirm necessary programs are installed and available
 missing_soft=0
 
 for software in "${prereq_software[@]}"; do
-    command -v $software >/dev/null 2>&1 || { echo >&2 "Script requires $software but it's not installed."; missing_soft=$((missing_soft+1))}
+    if ! command -v "$software" >/dev/null 2>&1; then
+        echo "Script requires $software but it's not installed."
+        missing_soft=$((missing_soft+1))
+    fi
 done
 
 # If necessary programs absent, attempt to install.
-if [[ $missing_soft > 0 ]]; then
-    echo "Missing software detected. Attempt to install necessary software to continue? (y/n)" >> "$log_file"
-    read user_input
+if [[ $missing_soft -gt 0 ]]; then
+    echo "Missing software detected. Attempt to install necessary software to continue? (y/n)"
+    read -r user_input
 
-    # Check for valid user response
     case "$user_input" in
         [Yy]|[Yy][Ee][Ss])
             echo "Attempting to install missing software..."
+            sudo apt update
+            sudo apt install fastqc multiqc hisat2 samtools subread md5sum
             ;;
         [Nn]|[Nn][Oo])
             echo "Exiting script."
@@ -204,12 +208,9 @@ if [[ $missing_soft > 0 ]]; then
             exit 1
             ;;
     esac
-
-    cmd="sudo apt install fastqc && multiqc && hisat2 && samtools && subread && md5sum"
-    eval $cmd >> "$log_file"
+else
+    echo "All necessary software installed, continuing..."
 fi
-
-TODO: check if available free space is adequate for finishing run, but just warn.
 
 ############### Verify md5 hashes ###############
 
